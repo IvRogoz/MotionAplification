@@ -98,6 +98,12 @@ def live_eulerian_magnification(
     chunk_size=60,
     overlap=30,
     default_fps=30.0,
+    capture_width=0,
+    capture_height=0,
+    save_width=0,
+    save_height=0,
+    record_output_path=None,
+    record_codec="mp4v",
     window_name="Live Motion + Color Amplification",
 ):
     if chunk_size <= overlap:
@@ -107,13 +113,34 @@ def live_eulerian_magnification(
     if not cap.isOpened():
         raise RuntimeError(f"Unable to open camera index {camera_index}")
 
+    if capture_width and capture_width > 0:
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(capture_width))
+    if capture_height and capture_height > 0:
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(capture_height))
+
     fps = cap.get(cv2.CAP_PROP_FPS)
     if not fps or fps <= 1:
         fps = default_fps
 
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    target_save_width = int(save_width) if save_width and save_width > 0 else width
+    target_save_height = int(save_height) if save_height and save_height > 0 else height
+
+    writer = None
+    if record_output_path:
+        if target_save_width <= 0 or target_save_height <= 0:
+            raise RuntimeError("Unable to determine frame size for recording")
+        fourcc = cv2.VideoWriter_fourcc(*record_codec)
+        writer = cv2.VideoWriter(record_output_path, fourcc, fps, (target_save_width, target_save_height))
+        if not writer.isOpened():
+            cap.release()
+            raise RuntimeError(f"Unable to open recording output path: {record_output_path}")
+
     buffer = []
     output_started = False
     stop_requested = False
+    recorded_frames = 0
 
     while True:
         ret, frame = cap.read()
@@ -153,6 +180,13 @@ def live_eulerian_magnification(
         start_index = 0 if not output_started else overlap
         for processed in processed_frames[start_index:]:
             cv2.imshow(window_name, processed)
+            if writer is not None:
+                if processed.shape[1] != target_save_width or processed.shape[0] != target_save_height:
+                    frame_to_write = cv2.resize(processed, (target_save_width, target_save_height))
+                else:
+                    frame_to_write = processed
+                writer.write(frame_to_write)
+                recorded_frames += 1
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 stop_requested = True
                 break
@@ -164,7 +198,13 @@ def live_eulerian_magnification(
             break
 
     cap.release()
+    if writer is not None:
+        writer.release()
     cv2.destroyAllWindows()
+
+    if writer is not None and recorded_frames > 0:
+        return record_output_path
+    return None
 
 
 if __name__ == "__main__":

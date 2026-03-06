@@ -1,0 +1,5 @@
+opencv-python
+numpy
+scipy
+tqdm
+cv2-enumerate-cameras
